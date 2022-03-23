@@ -4,19 +4,52 @@ from glob import glob
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import ShuffleSplit
 
 import rampwf as rw
 from rampwf.score_types.base import BaseScoreType
+from sklearn.model_selection import BaseCrossValidator
 
-problem_title = "Forecasting secound round of national election based on Graphs"
+class RegionalSplit(BaseCrossValidator):
 
-_target_names = [
-    j + str(i + 1) for j in list(string.ascii_uppercase) for i in range(80)
-]
+    def __init__(self, n_splits = 10, reg_col='REG', test_size = 0.3, random_state=None):  
+        self.reg_col = reg_col
+        self.test_size = test_size
+        self.n_splits = n_splits
+        if random_state : 
+            self.gen = np.random.default_rng(random_state)
+        else : 
+            self.gen = np.random.default_rng(np.random.randint(1e10))
 
-Predictions = rw.prediction_types.make_regression(label_names=_target_names)
-workflow = rw.workflows.Regressor()
+    def get_n_splits(self, X, y=None, groups=None):
+        return self.n_splits
+
+    def split(self, X, y = None, groups=None):
+
+        n_splits = self.get_n_splits(X, y, groups)
+        for i in range(n_splits):
+            assert isinstance(X, pd.DataFrame), "Provided data must be a dataframe"
+            assert self.reg_col in X.columns
+            indices = X.groupby(self.reg_col).indices
+            train_nodes = []
+            test_nodes = []
+            for k,v in indices.items() : 
+                test_size_abs = int(len(v) * self.test_size) 
+                random_choice = self.gen.choice(len(v), len(v), replace=False)
+                test_indices = v[random_choice[:test_size_abs]]
+                train_indices =  v[random_choice[test_size_abs:]]
+                
+                train_nodes.extend(train_indices.tolist())
+                test_nodes.extend(test_indices.tolist())
+            yield (
+                np.array(train_nodes), np.array(test_nodes)
+            )
+
+problem_title = "Forecasting secound round of national elections based on Graphs"
+
+label_name = ['y']
+
+Predictions = rw.prediction_types.make_regression(label_names=label_name)
+workflow = rw.workflows.feature_extractor_regressor()
 
 
 class MAE(BaseScoreType):
@@ -28,8 +61,8 @@ class MAE(BaseScoreType):
         self.name = name
         self.precision = precision
 
-    def __call__(self, y_true, y_pred):
-        mae = (np.abs(y_true - y_pred)).mean()
+    def __call__(self, y_true, y_pred, weights = None):
+        mae =  np.average((np.abs(y_true - y_pred)), weights = weights)
         return mae
 
 
@@ -106,5 +139,5 @@ def get_test_data(path="."):
 
 
 def get_cv(X, y):
-    cv = ShuffleSplit(n_splits=10, test_size=0.25, random_state=57)
+    cv = RegionalSplit(n_splits=10, test_size=0.3, random_state=2022, reg_col = 'REG')
     return cv.split(X, y)
