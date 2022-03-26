@@ -11,7 +11,7 @@ from sklearn.model_selection import BaseCrossValidator
 
 class RegionalSplit(BaseCrossValidator):
 
-    def __init__(self, n_splits = 10, reg_col='REG', test_size = 0.3, random_state=None):  
+    def __init__(self, n_splits = 10, reg_col='reg_id', test_size = 0.5, random_state=None):  
         self.reg_col = reg_col
         self.test_size = test_size
         self.n_splits = n_splits
@@ -32,7 +32,7 @@ class RegionalSplit(BaseCrossValidator):
             indices = X.groupby(self.reg_col).indices
             train_nodes = []
             test_nodes = []
-            for k,v in indices.items() : 
+            for k,v in indices.items(): 
                 test_size_abs = int(len(v) * self.test_size) 
                 random_choice = self.gen.choice(len(v), len(v), replace=False)
                 test_indices = v[random_choice[:test_size_abs]]
@@ -49,7 +49,7 @@ problem_title = "Forecasting secound round of national elections based on Graphs
 label_name = ['y']
 
 Predictions = rw.prediction_types.make_regression(label_names=label_name)
-workflow = rw.workflows.feature_extractor_regressor()
+workflow = rw.workflows.FeatureExtractorRegressor()
 
 
 class MAE(BaseScoreType):
@@ -70,64 +70,28 @@ score_types = [
     MAE(name="MAE"),
 ]
 
-
-def get_file_list_from_dir(*, path, datadir):
-    data_files = sorted(glob(os.path.join(path, "data", datadir, "*.csv.gz")))
-    return data_files
-
-
 def _get_data(path=".", split="train"):
-    # load and concatenate data in one dataset
-    # ( train data are composed of 690 different
-    # simulations of an operating reactor
-    # and test data of 230 simulations)
-    # returns X (input) and Y (output) arrays
-    data_files = get_file_list_from_dir(path=path, datadir=split)
-    dataset = pd.concat([pd.read_csv(f) for f in data_files])
 
-    # Isotopes are named from A to Z
-    alphabet = list(string.ascii_uppercase)
+    nodes = []
+    if split == 'train': 
+        node_file = 'train_nodes'
+    else : 
+        node_file = 'test_nodes'
+    
+    with open(os.path.join(path,f'data/{node_file}.txt'),'r') as f :
+        for line in f.readlines(): 
+            nodes.append(line.split('\n')[0])
 
-    # At T=0 only isotopes from A to H are != 0.
-    # Those are the input composition
-    # The input parameter space is composed of those initial
-    # compositions + operating parameters p1 to p5
-    input_params = alphabet[:8] + ["p1", "p2", "p3", "p4", "p5"]
+    node_features = pd.read_csv(os.path.join(path, 'data/node_features.csv'))
+    node_features['node_id'] = node_features['node_id'].astype(str)
 
-    data = dataset[alphabet].add_prefix("Y_")
-    data["times"] = dataset["times"]
-    data = data[data["times"] > 0.0]
+    y = pd.read_csv('data/y.csv', index_col = 0)
+    y['node_id'] = y['node_id'].astype(str)
+    y = y[y['node_id'].isin(nodes)]['y'].values
 
-    temp = pd.DataFrame(
-        np.repeat(dataset.loc[0][input_params].values, 80, axis=0),
-        columns=input_params
-    ).reset_index(drop=True)
-    data = pd.concat([temp, data.reset_index(drop=True)], axis=1)
-
-    # data = shuffle(data, random_state=57)
-
-    X_df = (
-        data.groupby(input_params)["A"]
-        .apply(list)
-        .apply(pd.Series)
-        .rename(columns=lambda x: "A" + str(x + 1))
-        .reset_index()[input_params]
-    )
-    Y_df = []
-    for i in alphabet:
-        Y_df.append(
-            data.groupby(input_params)["Y_" + i]
-            .apply(list)
-            .apply(pd.Series)
-            .rename(columns=lambda x: i + str(x + 1))
-            .reset_index()
-            .iloc[:, len(input_params):]
-        )
-    Y_df = pd.concat(Y_df, axis=1)
-
-    X = X_df.to_numpy()
-    Y = Y_df.to_numpy()
-    return X, Y
+    X = node_features[node_features['node_id'].isin(nodes)][['node_id', 'reg_id']]
+    
+    return X, y.reshape(-1,1)
 
 
 def get_train_data(path="."):
@@ -139,5 +103,5 @@ def get_test_data(path="."):
 
 
 def get_cv(X, y):
-    cv = RegionalSplit(n_splits=10, test_size=0.3, random_state=2022, reg_col = 'REG')
+    cv = RegionalSplit(n_splits=10, test_size=0.5, random_state=2022, reg_col = 'reg_id')
     return cv.split(X, y)

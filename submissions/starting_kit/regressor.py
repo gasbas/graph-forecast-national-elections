@@ -1,7 +1,7 @@
 from sklearn.linear_model import LinearRegression
 from sklearn.base import BaseEstimator
-
-
+import pandas as pd 
+import sys
 class Regressor(BaseEstimator):
     def __init__(self):
         self.model = LinearRegression()
