@@ -1,7 +1,6 @@
 # Graph-based forecast of French National Elections 2017 results (second tour)
 
-Authors : Raphaël Gervillie and Gaspard Michel 
-------
+**Authors** : Raphaël Gervillié and Gaspard Michel 
 
 Institut Polytechnique de Paris - M2 Data Science
 
